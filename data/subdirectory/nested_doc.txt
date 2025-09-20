@@ -1,0 +1,16 @@
+Deep Learning Fundamentals
+
+Deep learning is a subset of machine learning that uses neural networks with multiple layers to model and understand complex patterns in data. It has revolutionized many fields including computer vision, natural language processing, and speech recognition.
+
+Neural Network Architecture:
+- Input Layer: Receives the raw data
+- Hidden Layers: Process and transform the data
+- Output Layer: Produces the final prediction
+
+Key Concepts:
+- Backpropagation: Algorithm for training neural networks
+- Gradient Descent: Optimization technique
+- Activation Functions: Non-linear transformations
+- Regularization: Techniques to prevent overfitting
+
+Popular frameworks include TensorFlow, PyTorch, and Keras.

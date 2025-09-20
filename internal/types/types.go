@@ -1,10 +1,14 @@
 package types
 
-import "time"
+import (
+	"fmt"
+	"hash/fnv"
+	"time"
+)
 
 // DocumentChunk represents a chunk of a document with metadata
 type DocumentChunk struct {
-	ID         string    `json:"id"`
+	ID         uint64    `json:"id"`
 	DocumentID string    `json:"document_id"`
 	Content    string    `json:"content"`
 	ChunkIndex int       `json:"chunk_index"`
@@ -118,6 +122,7 @@ type EmbeddingConfig struct {
 	Model      string `json:"model"`
 	Dimensions int    `json:"dimensions"`
 	Provider   string `json:"provider"` // "openai", "huggingface", etc.
+	APIKey     string `json:"api_key,omitempty"`
 }
 
 // VectorStoreConfig represents configuration for vector storage
@@ -129,6 +134,13 @@ type VectorStoreConfig struct {
 	APIKey         string `json:"api_key,omitempty"`
 }
 
+// GenerateChunkID creates a deterministic numeric ID from document ID and chunk index
+func GenerateChunkID(documentID string, chunkIndex int) uint64 {
+	h := fnv.New64a()
+	h.Write([]byte(fmt.Sprintf("%s_%d", documentID, chunkIndex)))
+	return h.Sum64()
+}
+
 // GenerationConfig represents configuration for response generation
 type GenerationConfig struct {
 	Provider    string  `json:"provider"` // "openai", "anthropic", "huggingface"
@@ -136,4 +148,29 @@ type GenerationConfig struct {
 	Temperature float64 `json:"temperature"`
 	MaxTokens   int     `json:"max_tokens"`
 	APIKey      string  `json:"api_key,omitempty"`
+}
+
+// DirectoryIngestRequest represents a request to ingest all files from a directory
+type DirectoryIngestRequest struct {
+	DirectoryPath string            `json:"directory_path" binding:"required"`
+	Recursive     bool              `json:"recursive,omitempty"`
+	FilePattern   string            `json:"file_pattern,omitempty"` // e.g., "*.txt,*.md"
+	Metadata      Metadata          `json:"metadata,omitempty"`
+}
+
+// DirectoryIngestResponse represents the response from directory ingestion
+type DirectoryIngestResponse struct {
+	DirectoryPath        string           `json:"directory_path"`
+	ProcessedFiles       int              `json:"processed_files"`
+	SuccessfulIngestions []IngestResponse `json:"successful_ingestions"`
+	Errors               []string         `json:"errors,omitempty"`
+	ProcessingTime       string           `json:"processing_time"`
+}
+
+// FileIngestResult represents the result of ingesting a single file
+type FileIngestResult struct {
+	FilePath   string `json:"file_path"`
+	DocumentID string `json:"document_id"`
+	Status     string `json:"status"`
+	Error      string `json:"error,omitempty"`
 }
