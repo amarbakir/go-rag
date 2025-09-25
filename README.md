@@ -201,9 +201,9 @@ docker-compose up
 
 ## TODO
 
-- [ ] Implement actual Qdrant integration
-- [ ] Add embedding service integration (OpenAI, HuggingFace)
-- [ ] Implement LLM integration for generation
+- [x] Implement actual Qdrant integration
+- [x] Add embedding service integration (OpenAI, HuggingFace)
+- [x] Implement LLM integration for generation
 - [ ] Add authentication and authorization
 - [ ] Implement caching layer
 - [ ] Add comprehensive tests
