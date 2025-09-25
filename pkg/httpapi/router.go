@@ -1,10 +1,14 @@
 package httpapi
 
 import (
+	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"go-rag/internal/chunk"
+	"go-rag/internal/config"
+	"go-rag/internal/embedding"
 	"go-rag/internal/generate"
 	"go-rag/internal/ingest"
 	"go-rag/internal/ranker"
@@ -20,28 +24,43 @@ type Handler struct {
 	ingestService    *ingest.Service
 	retrieverService *retriever.Service
 	rankerService    *ranker.Service
-	generateService  *generate.Service
+	generateService  generate.GenerationService
 	vectorStore      store.VectorStore
 }
 
 // NewHandler creates a new HTTP handler with all dependencies
-func NewHandler() *Handler {
-	// Initialize services
-	chunker := chunk.NewService(1000, 200)
-	vectorStore, _ := store.NewQdrantStore("localhost", 6333, "documents")
+func NewHandler(cfg *config.Config) *Handler {
+	// Initialize embedding service
+	embeddingService, err := embedding.NewService(cfg.Embedding)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to create embedding service: %v", err))
+	}
+
+	// Initialize services with configuration
+	chunker := chunk.NewService(cfg.Chunking.ChunkSize, cfg.Chunking.ChunkOverlap)
+	vectorStore, err := store.NewQdrantStore(cfg.VectorStore, embeddingService)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to create vector store: %v", err))
+	}
+
+	// Initialize generation service
+	generateService, err := generate.NewService(cfg.Generation)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to create generation service: %v", err))
+	}
 
 	return &Handler{
 		ingestService:    ingest.NewService(*chunker, vectorStore),
 		retrieverService: retriever.NewService(vectorStore),
 		rankerService:    ranker.NewService(),
-		generateService:  generate.NewService(),
+		generateService:  generateService,
 		vectorStore:      vectorStore,
 	}
 }
 
 // SetupRoutes configures all API routes
-func SetupRoutes(router *gin.Engine) {
-	handler := NewHandler()
+func SetupRoutes(router *gin.Engine, cfg *config.Config) {
+	handler := NewHandler(cfg)
 
 	// Health check
 	router.GET("/health", handler.HealthCheck)
@@ -51,6 +70,7 @@ func SetupRoutes(router *gin.Engine) {
 	{
 		// Document ingestion
 		v1.POST("/ingest", handler.IngestDocument)
+		v1.POST("/ingest/directory", handler.IngestDirectory)
 		v1.DELETE("/documents/:id", handler.DeleteDocument)
 
 		// Search and retrieval
@@ -91,7 +111,7 @@ func (h *Handler) IngestDocument(c *gin.Context) {
 
 	start := time.Now()
 
-	err := h.ingestService.IngestText(c.Request.Context(), req.DocumentID, req.Content)
+	chunksCount, err := h.ingestService.IngestText(c.Request.Context(), req.DocumentID, req.Content)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, types.ErrorResponse{
 			Error:   "ingestion_failed",
@@ -103,6 +123,7 @@ func (h *Handler) IngestDocument(c *gin.Context) {
 
 	response := types.IngestResponse{
 		DocumentID:     req.DocumentID,
+		ChunksCount:    chunksCount,
 		Status:         "success",
 		ProcessingTime: time.Since(start).String(),
 	}
@@ -125,6 +146,46 @@ func (h *Handler) DeleteDocument(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"status": "deleted", "document_id": documentID})
+}
+
+// IngestDirectory handles directory ingestion requests
+func (h *Handler) IngestDirectory(c *gin.Context) {
+	var req types.DirectoryIngestRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, types.ErrorResponse{
+			Error:   "invalid_request",
+			Code:    http.StatusBadRequest,
+			Message: err.Error(),
+		})
+		return
+	}
+
+	// Validate directory path
+	if req.DirectoryPath == "" {
+		c.JSON(http.StatusBadRequest, types.ErrorResponse{
+			Error:   "invalid_request",
+			Code:    http.StatusBadRequest,
+			Message: "directory_path is required",
+		})
+		return
+	}
+
+	start := time.Now()
+
+	result, err := h.ingestService.IngestDirectory(c.Request.Context(), req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, types.ErrorResponse{
+			Error:   "directory_ingestion_failed",
+			Code:    http.StatusInternalServerError,
+			Message: err.Error(),
+		})
+		return
+	}
+
+	// Update processing time
+	result.ProcessingTime = time.Since(start).String()
+
+	c.JSON(http.StatusOK, result)
 }
 
 // SearchDocuments handles search requests
@@ -202,7 +263,17 @@ func (h *Handler) GetDocumentChunks(c *gin.Context) {
 
 // GetChunk retrieves a specific chunk by ID
 func (h *Handler) GetChunk(c *gin.Context) {
-	chunkID := c.Param("id")
+	chunkIDStr := c.Param("id")
+
+	chunkID, err := strconv.ParseUint(chunkIDStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, types.ErrorResponse{
+			Error:   "invalid_chunk_id",
+			Code:    http.StatusBadRequest,
+			Message: "chunk ID must be a valid number",
+		})
+		return
+	}
 
 	chunk, err := h.retrieverService.RetrieveChunkByID(c.Request.Context(), chunkID)
 	if err != nil {

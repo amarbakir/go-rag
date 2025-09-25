@@ -45,11 +45,11 @@ func (s *Service) RetrieveByDocumentID(ctx context.Context, documentID string) (
 }
 
 // RetrieveChunkByID gets a specific chunk by its ID
-func (s *Service) RetrieveChunkByID(ctx context.Context, chunkID string) (*types.DocumentChunk, error) {
+func (s *Service) RetrieveChunkByID(ctx context.Context, chunkID uint64) (*types.DocumentChunk, error) {
 	chunk, err := s.store.GetChunkByID(ctx, chunkID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get chunk by ID: %w", err)
 	}
-	
+
 	return chunk, nil
 }
